@@ -18,18 +18,18 @@ const serviceRegion = import.meta.env.VITE_SPEECH_REGION?.trim() || "";
 
 // Define the complete list of languages used for both source and target
 const languages: { code: string; name: string }[] = [
-    { code: "en", name: "English" },
-    { code: "fr", name: "French" },
-    { code: "es", name: "Spanish" },
-    { code: "pl", name: "Polish" },
-    { code: "de", name: "German" },
-    { code: "it", name: "Italian" },
-    { code: "zh", name: "Chinese" },
-    { code: "ja", name: "Japanese" },
-    { code: "ko", name: "Korean" },
-    { code: "ar", name: "Arabic" },
-    { code: "pt", name: "Portuguese" },
-    { code: "ru", name: "Russian" },
+    { code: "en", name: "Anglais" },
+    { code: "fr", name: "Français" },
+    { code: "es", name: "Espagnol" },
+    { code: "pl", name: "Polonais" },
+    { code: "de", name: "Allemand" },
+    { code: "it", name: "Italien" },
+    { code: "zh", name: "Chinois" },
+    { code: "ja", name: "Japonais" },
+    { code: "ko", name: "Coréen" },
+    { code: "ar", name: "Arabe" },
+    { code: "pt", name: "Portugais" },
+    { code: "ru", name: "Russe" },
     // Add more languages as desired
 ];
 
@@ -105,8 +105,8 @@ function App() {
     const sourceLanguages: { code: string; name: string }[] = languages;
 
     // Initialize source and target language states
-    const [sourceLanguage, setSourceLanguage] = useState<string>("en"); // Default to English
-    const [targetLanguage, setTargetLanguage] = useState<string>("fr"); // Default to French
+    const [sourceLanguage, setSourceLanguage] = useState<string>("fr"); // Default to English
+    const [targetLanguage, setTargetLanguage] = useState<string>("pl"); // Default to French
 
     // State for audio input devices
     const [audioInputDevices, setAudioInputDevices] = useState<AudioInputDevice[]>([]);
@@ -517,9 +517,11 @@ function App() {
     };
 
     // Synthesize Speech Function with adjustable speed
+// Synthesize Speech Function with adjustable speed
     const synthesizeSpeech = (text: string) => {
         try {
-            console.log(`Synthesizing speech for text: ${text}`);
+            console.log(`Synthesizing speech for text: "${text}" at speed: ${playbackSpeed}x`);
+
             const speechConfig = SpeechSDK.SpeechConfig.fromSubscription(speechKey, serviceRegion);
             const synthesisLanguage = voiceMap[targetLanguage] ? getLocaleCode(targetLanguage) : "en-US";
             speechConfig.speechSynthesisLanguage = synthesisLanguage;
@@ -528,27 +530,35 @@ function App() {
             const audioConfig = SpeechSDK.AudioConfig.fromDefaultSpeakerOutput();
             const synthesizer = new SpeechSDK.SpeechSynthesizer(speechConfig, audioConfig);
 
-            // Create SSML with adjustable rate based on playbackSpeed state
+            // Close any existing synthesizer before assigning a new one
+            if (synthRef.current) {
+                console.log("Closing existing synthesizer.");
+                synthRef.current.close();
+            }
+
+            // Use playbackSpeed with one decimal place for finer control
+            const prosodyRate = `${(playbackSpeed * 100).toFixed(1)}%`;
+            console.log(`SSML Prosody Rate: ${prosodyRate}`);
+
             const ssml = `
             <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${synthesisLanguage}">
               <voice name="${speechConfig.speechSynthesisVoiceName}">
-                <prosody rate="${playbackSpeed}">${text}</prosody>
+                <prosody rate="${prosodyRate}">${text}</prosody>
               </voice>
             </speak>`;
 
             synthesizer.speakSsmlAsync(
                 ssml,
                 (result) => {
-                    if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
-                        console.log("Speech synthesized for text:", text);
-                    } else {
-                        console.error("Speech synthesis failed:", result.errorDetails);
-                        setError("Speech synthesis failed.");
+                    if (result) {
+                        console.log("Synthesis succeeded:", result);
+                        synthesizer.close();
                     }
                 },
                 (error) => {
-                    console.error("Error during speech synthesis:", error);
-                    setError("Error during speech synthesis.");
+                    console.error("Error during synthesis:", error);
+                    setError("An error occurred during speech synthesis.");
+                    synthesizer.close();
                 }
             );
 
@@ -646,22 +656,18 @@ function App() {
                 <nav className="flex items-center justify-between py-4">
                     <div className="flex items-center">
                         <img src={logo} alt="App Logo" className="h-10 w-30 mr-3" />
-                        <span className="text-2xl font-bold text-[#171B17]">AI Translator</span>
+                        <span className="text-2xl font-bold text-[#171B17]">Traducteur IA</span>
                     </div>
                 </nav>
 
                 {/* Hero Section */}
                 <div className="text-center my-12">
                     <h1 className="text-4xl md:text-6xl font-extrabold text-[#171B17] mb-4">
-                        Real-time Speech-to-Speech Translation
+                        Traduction vocale en temps réel
                     </h1>
                     <p className="text-xl md:text-2xl text-[#817F75] max-w-2xl mx-auto">
-                        Speak in any language, and we'll transcribe and translate it instantly with natural-sounding voices.
+                    Parlez dans n'importe quelle langue, et nous la transcrirons et la traduirons instantanément avec des voix naturelles.
                     </p>
-                    {/* Illustrative Image */}
-                    <div className="mt-8">
-                        <img src={contactImage} alt="Contact Us" className="mx-auto h-40 w-auto" />
-                    </div>
                 </div>
 
                 {/* Error Message */}
@@ -685,7 +691,7 @@ function App() {
                     {/* Audio Input Device Selection */}
                     <div className="w-full max-w-md">
                         <label htmlFor="audio-input-device" className="block text-[#817F75] font-medium mb-2">
-                            Select Audio Input Device:
+                            Sélectionnez le périphérique d'entrée audio:
                         </label>
                         <select
                             id="audio-input-device"
@@ -700,7 +706,7 @@ function App() {
                                     </option>
                                 ))
                             ) : (
-                                <option value="">No audio input devices found</option>
+                                <option value="">Aucun périphérique d'entrée audio trouvé</option>
                             )}
                         </select>
                     </div>
@@ -708,7 +714,7 @@ function App() {
                     {/* Source Language Selection */}
                     <div className="w-full max-w-md">
                         <label htmlFor="source-language" className="block text-[#817F75] font-medium mb-2">
-                            Select Source Language:
+                            Sélectionnez la langue source:
                         </label>
                         <select
                             id="source-language"
@@ -739,7 +745,7 @@ function App() {
                     {/* Target Language Selection */}
                     <div className="w-full max-w-md">
                         <label htmlFor="target-language" className="block text-[#817F75] font-medium mb-2">
-                            Select Target Language:
+                            Sélectionnez la langue cible:
                         </label>
                         <select
                             id="target-language"
@@ -771,7 +777,7 @@ function App() {
                 {/* Phrase List Section */}
                 <div className="mb-8">
                     <h2 className="text-2xl md:text-3xl font-semibold text-[#817F75] mb-4 text-center">
-                        Enhance Recognition with Phrase List ({sourceLanguage.toUpperCase()})
+                        Améliorez la reconnaissance avec la liste de phrases ({sourceLanguage.toUpperCase()})
                     </h2>
                     <div className="flex flex-col md:flex-row items-start justify-center md:items-center gap-2">
                         <input
@@ -779,7 +785,7 @@ function App() {
                             value={phraseInput}
                             onChange={(e) => setPhraseInput(e.target.value)}
                             onKeyDown={handlePhraseInputKeyDown}
-                            placeholder="Enter a phrase or word and press Enter"
+                            placeholder="Entrez une phrase ou un mot et appuyez sur Entrée"
                             className="w-full md:w-auto p-2 border border-[#C5D9E2] rounded-md bg-[#F5F5F5] text-[#171B17] shadow-sm focus:outline-none focus:ring-2 focus:ring-[#B6EA01] transition duration-200 text-sm"
                         />
                         <button
@@ -806,7 +812,7 @@ function App() {
                     {predefinedScientificTerms[sourceLanguage]?.length > 0 && (
                         <div className="mt-4">
                             <h3 className="text-lg font-medium text-[#817F75] mb-2">
-                                Predefined Scientific Terms:
+                                Termes scientifiques prédéfinis:
                             </h3>
                             <div className="flex flex-wrap gap-2">
                                 {predefinedScientificTerms[sourceLanguage].map((term, index) => (
@@ -849,7 +855,7 @@ function App() {
                 {/* Audio Playback Speed Control */}
                 <div className="flex flex-col items-center mb-8">
                     <label htmlFor="playback-speed" className="block text-[#817F75] font-medium mb-2">
-                        Adjust Audio Playback Speed: {playbackSpeed.toFixed(1)}x
+                        Ajuster la vitesse de lecture audio : {playbackSpeed.toFixed(1)}x
                     </label>
                     <input
                         type="range"
@@ -858,7 +864,11 @@ function App() {
                         max="2.0"
                         step="0.1"
                         value={playbackSpeed}
-                        onChange={(e) => setPlaybackSpeed(parseFloat(e.target.value))}
+                        onChange={(e) => {
+                            const newSpeed = parseFloat(e.target.value);
+                            console.log(`Updating playback speed to: ${newSpeed}x`);
+                            setPlaybackSpeed(newSpeed);
+                        }}
                         className="w-full max-w-md"
                     />
                 </div>
@@ -906,7 +916,7 @@ function App() {
                 {showTranscriptionSections && (
                     <div className="mt-12">
                         <h2 className="text-2xl md:text-3xl font-bold mb-4 text-[#817F75]">
-                            Session Transcription
+                            Transcription de la session
                         </h2>
                         <div className="p-6 bg-[#F5F5F5] rounded-lg shadow-md min-h-[200px] overflow-y-auto">
                             <pre className="text-[#171B17] whitespace-pre-wrap">
@@ -922,21 +932,13 @@ function App() {
                                 disabled={!sessionTranscription}
                             >
                                 <Download className="w-5 h-5 mr-2" />
-                                Download Transcription
+                                Télécharger la transcription
                             </button>
                         </div>
                     </div>
                 )}
             </div>
 
-            {/* Footer */}
-            <footer className="bg-[#F5F5F5] shadow-inner mt-12">
-                <div className="container mx-auto px-4 py-6 flex flex-col items-center">
-                    {/* Contact Image */}
-                    <img src={contactImage} alt="Contact Us" className="h-30 w-50 mb-1" />
-                    <p className="text-gray-600">&copy; 2024 AI Translator. All rights reserved.</p>
-                </div>
-            </footer>
         </div>
     );
 }
