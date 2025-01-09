@@ -2,13 +2,22 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import * as SpeechSDK from "microsoft-cognitiveservices-speech-sdk";
-import { Download, Trash2, Plus, X, Check, Mic, MicOff } from "lucide-react";
+import {
+    Download,
+    Trash2,
+    Plus,
+    X,
+    Check,
+    Mic,
+    MicOff,
+} from "lucide-react";
 import "@fontsource/roboto/300.css"; // Roboto Light font
-import ReactCountryFlag from "react-country-flag"; // For displaying country flags
 import logo from "./assets/logo.png"; // Ensure you have a logo in src/assets/
 import { AudioVisualizer } from "./components/AudioVisualizer";
 import { motion } from "framer-motion";
 import { debounce } from "lodash";
+import Select, { components, OptionProps, SingleValue } from "react-select";
+import ReactCountryFlag from "react-country-flag";
 
 // Access environment variables via import.meta.env for Vite
 const speechKey = import.meta.env.VITE_SPEECH_KEY?.trim() || "";
@@ -32,7 +41,7 @@ const languages: { code: string; name: string }[] = [
 ];
 
 // Function to map language codes to country codes for flags
-const getCountryCode = (languageCode: string) => {
+const getCountryCode = (languageCode: string): string => {
     const countryMap: { [key: string]: string } = {
         pl: "PL",
         en: "US", // English - United States
@@ -60,10 +69,13 @@ const predefinedScientificTerms: { [key: string]: string[] } = {
 };
 
 // Define Phrase Lists per Language (initially empty, users can add)
-const initialPhraseLists: { [key: string]: string[] } = languages.reduce((acc, lang) => {
-    acc[lang.code] = [];
-    return acc;
-}, {} as { [key: string]: string[] });
+const initialPhraseLists: { [key: string]: string[] } = languages.reduce(
+    (acc, lang) => {
+        acc[lang.code] = [];
+        return acc;
+    },
+    {} as { [key: string]: string[] }
+);
 
 // Voice names mapping based on language
 const voiceMap: { [key: string]: string } = {
@@ -82,6 +94,43 @@ const voiceMap: { [key: string]: string } = {
     // Add more mappings as needed
 };
 
+// Custom Option component to include flag icons
+const CustomOption = (props: OptionProps<{ value: string; label: string; countryCode: string }, false>) => (
+    <components.Option {...props}>
+        <div className="flex items-center">
+            <ReactCountryFlag
+                countryCode={props.data.countryCode}
+                svg
+                style={{ width: "20px", height: "20px" }}
+                title={props.data.label}
+            />
+            <span className="ml-2">{props.data.label}</span>
+        </div>
+    </components.Option>
+);
+
+// Custom SingleValue component to include flag icons
+const CustomSingleValue = (props: SingleValue<{ value: string; label: string; countryCode: string }>) => (
+    <components.SingleValue {...props}>
+        <div className="flex items-center">
+            <ReactCountryFlag
+                countryCode={props.data.countryCode}
+                svg
+                style={{ width: "20px", height: "20px" }}
+                title={props.data.label}
+            />
+            <span className="ml-2">{props.data.label}</span>
+        </div>
+    </components.SingleValue>
+);
+
+// Define options for react-select with flags
+const languageOptions = languages.map((lang) => ({
+    value: lang.code,
+    label: lang.name,
+    countryCode: getCountryCode(lang.code),
+}));
+
 function App() {
     // State variables
     const [transcription, setTranscription] = useState("");
@@ -94,7 +143,8 @@ function App() {
     const [sessionTranscription, setSessionTranscription] = useState<string>("");
 
     // State to control visibility of transcription sections
-    const [showTranscriptionSections, setShowTranscriptionSections] = useState<boolean>(false);
+    const [showTranscriptionSections, setShowTranscriptionSections] =
+        useState<boolean>(false);
 
     // Define target languages
     const targetLanguages: { code: string; name: string }[] = languages;
@@ -110,11 +160,14 @@ function App() {
     const [audioInputDevices, setAudioInputDevices] = useState<
         { deviceId: string; label: string }[]
     >([]);
-    const [selectedAudioInputDevice, setSelectedAudioInputDevice] = useState<string>("");
+    const [selectedAudioInputDevice, setSelectedAudioInputDevice] =
+        useState<string>("");
 
     // State for phrase list: language-specific
     const [phraseInput, setPhraseInput] = useState<string>(""); // Current input field
-    const [phraseList, setPhraseList] = useState<{ [key: string]: string[] }>(initialPhraseLists); // List of phrases per language
+    const [phraseList, setPhraseList] = useState<{ [key: string]: string[] }>(
+        initialPhraseLists
+    ); // List of phrases per language
 
     // State for audio playback speed
     const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0); // Default speed 1.0
@@ -122,28 +175,57 @@ function App() {
     // State to prevent overlapping synthesizations
     const [isSynthesizing, setIsSynthesizing] = useState<boolean>(false);
 
-    // Add playbackSpeedRef
+    // Ref for playback speed
     const playbackSpeedRef = useRef<number>(playbackSpeed);
 
     // Update playbackSpeedRef when playbackSpeed changes
     useEffect(() => {
         playbackSpeedRef.current = playbackSpeed;
+        console.log(`playbackSpeedRef updated to: ${playbackSpeedRef.current}x`);
     }, [playbackSpeed]);
 
     // Refs for recognizer and synthesizer
-    const translationRecognizerRef = useRef<SpeechSDK.TranslationRecognizer | null>(null);
+    const translationRecognizerRef = useRef<
+        SpeechSDK.TranslationRecognizer | null
+    >(null);
     const synthRef = useRef<SpeechSDK.SpeechSynthesizer | null>(null);
     const stopInProgressRef = useRef(false);
 
     // Debounced function to apply phrases to recognizer
     const debouncedApplyPhrases = useRef(
         debounce(
-            (recognizer: SpeechSDK.SpeechRecognizer | SpeechSDK.TranslationRecognizer) => {
+            (
+                recognizer:
+                    | SpeechSDK.SpeechRecognizer
+                    | SpeechSDK.TranslationRecognizer
+            ) => {
                 addPhrasesToRecognizer(recognizer);
             },
             500
         )
     ).current;
+
+    // Initialize Synthesizer Once within useEffect
+    useEffect(() => {
+        if (!synthRef.current && speechKey && serviceRegion) {
+            const speechConfig =
+                SpeechSDK.SpeechConfig.fromSubscription(speechKey, serviceRegion);
+            const audioConfig = SpeechSDK.AudioConfig.fromDefaultSpeakerOutput();
+            synthRef.current = new SpeechSDK.SpeechSynthesizer(
+                speechConfig,
+                audioConfig
+            );
+            console.log("Synthesizer initialized.");
+        }
+
+        return () => {
+            if (synthRef.current) {
+                synthRef.current.close();
+                console.log("Synthesizer closed on unmount.");
+                synthRef.current = null;
+            }
+        };
+    }, [speechKey, serviceRegion]);
 
     // Enumerate audio input devices on component mount
     useEffect(() => {
@@ -165,11 +247,15 @@ function App() {
                 // Set default device if not already selected
                 if (audioInputs.length > 0 && !selectedAudioInputDevice) {
                     setSelectedAudioInputDevice(audioInputs[0].deviceId);
-                    console.log(`Default audio input device set to: ${audioInputs[0].label}`);
+                    console.log(
+                        `Default audio input device set to: ${audioInputs[0].label}`
+                    );
                 }
             } catch (err) {
                 console.error("Error enumerating audio devices:", err);
-                setError("Unable to access audio devices. Please check your microphone permissions.");
+                setError(
+                    "Unable to access audio devices. Please check your microphone permissions."
+                );
             }
         };
 
@@ -199,14 +285,21 @@ function App() {
                     synthRef.current.close();
                     console.log("Synthesizer closed on unmount");
                 } catch (error) {
-                    console.warn("Synthesizer already closed on unmount:", error);
+                    console.warn(
+                        "Synthesizer already closed on unmount:",
+                        error
+                    );
                 }
+                synthRef.current = null;
             }
             if (translationRecognizerRef.current) {
                 try {
                     translationRecognizerRef.current.close();
                 } catch (error) {
-                    console.warn("Translation recognizer already closed on unmount:", error);
+                    console.warn(
+                        "Translation recognizer already closed on unmount:",
+                        error
+                    );
                 }
             }
         };
@@ -257,15 +350,22 @@ function App() {
         ) {
             setPhraseList({
                 ...phraseList,
-                [sourceLanguage]: [...(phraseList[sourceLanguage] || []), trimmedPhrase],
+                [sourceLanguage]: [
+                    ...(phraseList[sourceLanguage] || []),
+                    trimmedPhrase,
+                ],
             });
             setPhraseInput("");
             setSuccessMessage("Phrase ajoutée avec succès !");
-            console.log(`[${sourceLanguage}] Phrase ajoutée: "${trimmedPhrase}"`);
+            console.log(
+                `[${sourceLanguage}] Phrase ajoutée: "${trimmedPhrase}"`
+            );
             // Clear success message after 3 seconds
             setTimeout(() => setSuccessMessage(null), 3000);
         } else {
-            setError("Phrase invalide ou en double. Veuillez vous assurer qu'elle contient des caractères valides et est unique.");
+            setError(
+                "Phrase invalide ou en double. Veuillez vous assurer qu'elle contient des caractères valides et est unique."
+            );
         }
     };
 
@@ -274,10 +374,15 @@ function App() {
         if (!phraseList[sourceLanguage]?.includes(phrase)) {
             setPhraseList({
                 ...phraseList,
-                [sourceLanguage]: [...(phraseList[sourceLanguage] || []), phrase],
+                [sourceLanguage]: [
+                    ...(phraseList[sourceLanguage] || []),
+                    phrase,
+                ],
             });
             setSuccessMessage("Phrase prédéfinie ajoutée avec succès !");
-            console.log(`[${sourceLanguage}] Phrase prédéfinie ajoutée: "${phrase}"`);
+            console.log(
+                `[${sourceLanguage}] Phrase prédéfinie ajoutée: "${phrase}"`
+            );
             // Clear success message after 3 seconds
             setTimeout(() => setSuccessMessage(null), 3000);
         }
@@ -287,7 +392,9 @@ function App() {
     const handleRemovePhrase = (phrase: string) => {
         setPhraseList({
             ...phraseList,
-            [sourceLanguage]: (phraseList[sourceLanguage] || []).filter((p) => p !== phrase),
+            [sourceLanguage]: (phraseList[sourceLanguage] || []).filter(
+                (p) => p !== phrase
+            ),
         });
         setSuccessMessage("Phrase supprimée avec succès !");
         console.log(`[${sourceLanguage}] Phrase supprimée: "${phrase}"`);
@@ -308,7 +415,9 @@ function App() {
     };
 
     // Handle Phrase Input Key Down (Enter key)
-    const handlePhraseInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const handlePhraseInputKeyDown = (
+        e: React.KeyboardEvent<HTMLInputElement>
+    ) => {
         if (e.key === "Enter") {
             e.preventDefault();
             handleAddPhrase();
@@ -317,32 +426,66 @@ function App() {
 
     // Function to add phrases to recognizer using PhraseListGrammar
     const addPhrasesToRecognizer = (
-        recognizer: SpeechSDK.SpeechRecognizer | SpeechSDK.TranslationRecognizer
+        recognizer:
+            | SpeechSDK.SpeechRecognizer
+            | SpeechSDK.TranslationRecognizer
     ): boolean => {
         try {
-            const phraseListConstraint = SpeechSDK.PhraseListGrammar.fromRecognizer(recognizer);
+            const phraseListConstraint =
+                SpeechSDK.PhraseListGrammar.fromRecognizer(recognizer);
             const currentPhrases = phraseList[sourceLanguage] || [];
 
             if (currentPhrases.length > 0) {
                 const allStrings = currentPhrases.every(
-                    (phrase) => typeof phrase === "string" && phrase.trim().length > 0
+                    (phrase) =>
+                        typeof phrase === "string" && phrase.trim().length > 0
                 );
                 if (!allStrings) {
-                    setError("La liste de phrases contient des entrées invalides.");
+                    setError(
+                        "La liste de phrases contient des entrées invalides."
+                    );
                     return false;
                 }
 
                 currentPhrases.forEach((phrase) => {
-                    console.log(`[${sourceLanguage}] Ajout de la phrase: "${phrase}"`);
+                    console.log(
+                        `[${sourceLanguage}] Ajout de la phrase: "${phrase}"`
+                    );
                     phraseListConstraint.addPhrase(phrase);
                 });
-                console.log(`[${sourceLanguage}] Toutes les phrases ont été ajoutées avec succès.`);
+                console.log(
+                    `[${sourceLanguage}] Toutes les phrases ont été ajoutées avec succès.`
+                );
             }
             return true;
         } catch (error: any) {
-            console.error(`[${sourceLanguage}] Erreur lors de l'ajout des phrases au reconnaisseur:`, error);
-            setError(`Erreur lors de l'ajout des phrases à la liste de phrases: ${error.message || error}`);
+            console.error(
+                `[${sourceLanguage}] Erreur lors de l'ajout des phrases au reconnaisseur:`,
+                error
+            );
+            setError(
+                `Erreur lors de l'ajout des phrases à la liste de phrases: ${
+                    error.message || error
+                }`
+            );
             return false;
+        }
+    };
+
+    // Handle Audio Input Device Change
+    const handleAudioInputDeviceChange = async (
+        e: React.ChangeEvent<HTMLSelectElement>
+    ) => {
+        const newDeviceId = e.target.value;
+        console.log(`Périphérique d'entrée audio changé en: ${newDeviceId}`);
+        setSelectedAudioInputDevice(newDeviceId);
+
+        if (isRecognizing) {
+            console.log(
+                `Redémarrage de la reconnaissance en raison du changement de périphérique audio en ${newDeviceId}.`
+            );
+            await stopRecognition();
+            startRecognition();
         }
     };
 
@@ -356,8 +499,12 @@ function App() {
         }
 
         if (!speechKey || !serviceRegion) {
-            console.error("Les informations d'identification du service de reconnaissance vocale sont manquantes.");
-            setError("Les informations d'identification du service de reconnaissance vocale sont manquantes.");
+            console.error(
+                "Les informations d'identification du service de reconnaissance vocale sont manquantes."
+            );
+            setError(
+                "Les informations d'identification du service de reconnaissance vocale sont manquantes."
+            );
             return;
         }
 
@@ -371,30 +518,47 @@ function App() {
         setShowTranscriptionSections(true); // Show transcription sections upon starting
 
         try {
-            const languageMap: { [key: string]: string } = languages.reduce((acc, lang) => {
-                acc[lang.code] = getLocaleCode(lang.code);
-                return acc;
-            }, {} as { [key: string]: string });
+            const languageMap: { [key: string]: string } = languages.reduce(
+                (acc, lang) => {
+                    acc[lang.code] = getLocaleCode(lang.code);
+                    return acc;
+                },
+                {} as { [key: string]: string }
+            );
 
             const mappedSourceLanguage = languageMap[sourceLanguage] || "en-US";
 
             console.log("Initialisation de SpeechTranslationConfig.");
-            const speechConfig = SpeechSDK.SpeechTranslationConfig.fromSubscription(speechKey, serviceRegion);
+            const speechConfig =
+                SpeechSDK.SpeechTranslationConfig.fromSubscription(
+                    speechKey,
+                    serviceRegion
+                );
             speechConfig.speechRecognitionLanguage = mappedSourceLanguage;
             speechConfig.addTargetLanguage(targetLanguage);
-            speechConfig.setProfanity(SpeechSDK.ProfanityOption.Raw); // Allow profanity in translation
+            speechConfig.setProfanity(
+                SpeechSDK.ProfanityOption.Raw
+            ); // Allow profanity in translation
 
             console.log("SpeechTranslationConfig initialisé:", speechConfig);
 
             // Use selected audio input device
             const audioConfig = selectedAudioInputDevice
-                ? SpeechSDK.AudioConfig.fromMicrophoneInput(selectedAudioInputDevice)
+                ? SpeechSDK.AudioConfig.fromMicrophoneInput(
+                      selectedAudioInputDevice
+                  )
                 : SpeechSDK.AudioConfig.fromDefaultMicrophoneInput();
 
-            console.log("AudioConfig pour TranslationRecognizer:", audioConfig);
+            console.log(
+                "AudioConfig pour TranslationRecognizer:",
+                audioConfig
+            );
 
             // Create the translation recognizer
-            const recognizer = new SpeechSDK.TranslationRecognizer(speechConfig, audioConfig);
+            const recognizer = new SpeechSDK.TranslationRecognizer(
+                speechConfig,
+                audioConfig
+            );
             console.log("TranslationRecognizer créé:", recognizer);
 
             // Add phrases specific to the source language
@@ -410,36 +574,62 @@ function App() {
             // Set up event handlers
             recognizer.recognizing = (s, e) => {
                 const text = e.result.text;
-                const translationText = e.result.translations.get(targetLanguage) || "";
+                const translationText =
+                    e.result.translations.get(targetLanguage) || "";
                 setTranscription(text);
                 setTranslation(translationText);
-                appendOrReplaceSessionTranscription(`Translation: ${translationText}`);
-                console.log(`[${targetLanguage}] Reconnaissance: ${text} | Traduction: ${translationText}`);
+                appendOrReplaceSessionTranscription(
+                    `Translation: ${translationText}`
+                );
+                console.log(
+                    `[${targetLanguage}] Reconnaissance: ${text} | Traduction: ${translationText}`
+                );
             };
 
             recognizer.recognized = (s, e) => {
-                console.log(`[${targetLanguage}] Événement recognized déclenché.`);
-                if (e.result.reason === SpeechSDK.ResultReason.TranslatedSpeech) {
+                console.log(
+                    `[${targetLanguage}] Événement recognized déclenché.`
+                );
+                if (
+                    e.result.reason ===
+                    SpeechSDK.ResultReason.TranslatedSpeech
+                ) {
                     const text = e.result.text;
-                    const translationText = e.result.translations.get(targetLanguage) || "";
+                    const translationText =
+                        e.result.translations.get(targetLanguage) || "";
                     setTranscription(text);
                     setTranslation(translationText);
-                    appendOrReplaceSessionTranscription(`Translation: ${translationText}`);
-                    console.log(`[${targetLanguage}] Discours traduit: ${translationText}`);
-                    synthesizeSpeech(translationText, playbackSpeedRef.current); // Use ref
+                    appendOrReplaceSessionTranscription(
+                        `Translation: ${translationText}`
+                    );
+                    console.log(
+                        `[${targetLanguage}] Discours traduit: ${translationText}`
+                    );
+                    synthesizeSpeech(
+                        translationText,
+                        playbackSpeedRef.current
+                    ); // Use ref
                 } else {
-                    console.warn(`[${targetLanguage}] Discours traduit non reconnu. Raison:`, e.result.reason);
+                    console.warn(
+                        `[${targetLanguage}] Discours traduit non reconnu. Raison:`,
+                        e.result.reason
+                    );
                 }
             };
 
             recognizer.canceled = (s, e) => {
-                console.error(`[${targetLanguage}] Reconnaissance traduite annulée:`, e.errorDetails);
+                console.error(
+                    `[${targetLanguage}] Reconnaissance traduite annulée:`,
+                    e.errorDetails
+                );
                 setError(`Traduction annulée: ${e.errorDetails}`);
                 stopRecognition();
             };
 
             recognizer.sessionStopped = () => {
-                console.log(`[${targetLanguage}] Session de reconnaissance traduite arrêtée`);
+                console.log(
+                    `[${targetLanguage}] Session de reconnaissance traduite arrêtée`
+                );
                 stopRecognition();
             };
 
@@ -448,8 +638,13 @@ function App() {
                     console.log("Reconnaissance traduite démarrée");
                 },
                 (err) => {
-                    console.error("Échec du démarrage de la reconnaissance traduite:", err);
-                    setError("Échec du démarrage de la reconnaissance traduite.");
+                    console.error(
+                        "Échec du démarrage de la reconnaissance traduite:",
+                        err
+                    );
+                    setError(
+                        "Échec du démarrage de la reconnaissance traduite."
+                    );
                     recognizer.close();
                     translationRecognizerRef.current = null;
                     stopRecognition();
@@ -457,7 +652,9 @@ function App() {
             );
         } catch (err) {
             console.error("Erreur lors de startRecognition:", err);
-            setError("Une erreur inattendue s'est produite lors de la reconnaissance.");
+            setError(
+                "Une erreur inattendue s'est produite lors de la reconnaissance."
+            );
             setIsRecognizing(false);
         }
     };
@@ -482,18 +679,29 @@ function App() {
                                 translationRecognizerRef.current?.close();
                                 console.log("Translation recognizer arrêté");
                             } catch (error) {
-                                console.warn("Erreur lors de la fermeture du translation recognizer:", error);
+                                console.warn(
+                                    "Erreur lors de la fermeture du translation recognizer:",
+                                    error
+                                );
                             }
                             translationRecognizerRef.current = null;
                             resolve();
                         },
                         (err) => {
-                            console.error("Erreur lors de l'arrêt du translation recognizer:", err);
-                            setError("Échec de l'arrêt du translation recognizer.");
+                            console.error(
+                                "Erreur lors de l'arrêt du translation recognizer:",
+                                err
+                            );
+                            setError(
+                                "Échec de l'arrêt du translation recognizer."
+                            );
                             try {
                                 translationRecognizerRef.current?.close();
                             } catch (error) {
-                                console.warn("Erreur lors de la fermeture du translation recognizer après échec:", error);
+                                console.warn(
+                                    "Erreur lors de la fermeture du translation recognizer après échec:",
+                                    error
+                                );
                             }
                             translationRecognizerRef.current = null;
                             resolve(); // Resolve even on error
@@ -506,22 +714,14 @@ function App() {
             // Wait for all stop operations to complete
             await Promise.all(stopPromises);
 
-            // Stop and close synthesizer exclusively here
-            if (synthRef.current) {
-                try {
-                    synthRef.current.close();
-                    console.log("Synthétiseur arrêté");
-                } catch (error) {
-                    console.warn("Synthétiseur déjà fermé:", error);
-                }
-                synthRef.current = null;
-                setIsSynthesizing(false);
-            }
+            // Removed Synthesizer closing from here to keep it initialized
 
             setIsRecognizing(false);
         } catch (err) {
             console.error("Erreur lors de stopRecognition:", err);
-            setError("Une erreur inattendue s'est produite lors de l'arrêt.");
+            setError(
+                "Une erreur inattendue s'est produite lors de l'arrêt."
+            );
             setIsRecognizing(false);
         } finally {
             stopInProgressRef.current = false;
@@ -537,68 +737,53 @@ function App() {
 
         setIsSynthesizing(true);
         try {
-            console.log(`Synthétisation du discours pour le texte: "${text}" à une vitesse de: ${speed}x`);
+            console.log(
+                `Synthétisation du discours pour le texte: "${text}" à une vitesse de: ${speed}x`
+            );
 
-            const speechConfig = SpeechSDK.SpeechConfig.fromSubscription(speechKey, serviceRegion);
-            const synthesisLanguage = getLocaleCode(targetLanguage); // Ensure locale code matches the voice
-            speechConfig.speechSynthesisLanguage = synthesisLanguage;
-            speechConfig.speechSynthesisVoiceName = voiceMap[targetLanguage] || "en-US-JennyNeural";
-
-            const audioConfig = SpeechSDK.AudioConfig.fromDefaultSpeakerOutput();
-            // Instantiate a new SpeechSynthesizer
-            const synthesizer = new SpeechSDK.SpeechSynthesizer(speechConfig, audioConfig);
-
-            // Close any existing synthesizer before assigning a new one
-            if (synthRef.current) {
-                console.log("Fermeture du synthétiseur existant.");
-                try {
-                    synthRef.current.close();
-                    console.log("Synthétiseur existant fermé.");
-                } catch (error) {
-                    console.warn("Erreur lors de la fermeture du synthétiseur existant:", error);
-                }
+            if (!synthRef.current) {
+                console.error("Synthesizer is not initialized.");
+                setError("Le synthétiseur n'est pas initialisé.");
+                setIsSynthesizing(false);
+                return;
             }
 
-            // Calculate prosody rate based on user-selected speed
-            const prosodyRate = `${(speed * 100).toFixed(0)}%`; // e.g., 1.5x => "150%"
+            const synthesisLanguage = getLocaleCode(targetLanguage);
+            const voiceName = voiceMap[targetLanguage] || "en-US-JennyNeural";
+
+            // Use decimal speed directly in prosody rate
+            const prosodyRate: string = `${speed}`; // e.g., 1.5x => "1.5", 0.8x => "0.8"
             console.log(`SSML Prosody Rate: ${prosodyRate}`);
 
+            // Construct SSML without line breaks and ensure no unnecessary whitespace
             const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${synthesisLanguage}">
-    <voice name="${speechConfig.speechSynthesisVoiceName}">
-        <prosody rate="${prosodyRate}">${text}</prosody>
-    </voice>
-</speak>`.trim();
+                            <voice name="${voiceName}">
+                                <prosody rate="${prosodyRate}">${text}</prosody>
+                            </voice>
+                          </speak>`;
             console.log("SSML used:", ssml);
 
-            synthesizer.speakSsmlAsync(
+            synthRef.current.speakSsmlAsync(
                 ssml,
                 (result) => {
                     if (result) {
                         console.log("Synthétisation réussie:", result);
-                        // Only close if this synthesizer is still the current one
-                        if (synthRef.current === synthesizer) {
-                            synthesizer.close();
-                            synthRef.current = null;
-                        }
                     }
                     setIsSynthesizing(false);
                 },
                 (error) => {
                     console.error("Erreur lors de la synthétisation:", error);
-                    setError("Une erreur s'est produite lors de la synthétisation vocale.");
-                    // Only close if this synthesizer is still the current one
-                    if (synthRef.current === synthesizer) {
-                        synthesizer.close();
-                        synthRef.current = null;
-                    }
+                    setError(
+                        "Une erreur s'est produite lors de la synthétisation vocale."
+                    );
                     setIsSynthesizing(false);
                 }
             );
-
-            synthRef.current = synthesizer;
         } catch (err) {
             console.error("Erreur lors de synthesizeSpeech:", err);
-            setError("Une erreur inattendue s'est produite lors de la synthétisation vocale.");
+            setError(
+                "Une erreur inattendue s'est produite lors de la synthétisation vocale."
+            );
             setIsSynthesizing(false);
         }
     };
@@ -623,50 +808,6 @@ function App() {
         return localeMap[langCode] || "en-US";
     };
 
-    // Handle Target Language Change
-    const handleTargetLanguageChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const newTargetLanguage = e.target.value;
-
-        if (newTargetLanguage === targetLanguage) return; // No change
-
-        console.log(`Langue cible changée en ${newTargetLanguage}.`);
-
-        setTargetLanguage(newTargetLanguage);
-
-        if (isRecognizing && translationRecognizerRef.current) {
-            // Restart translation recognizer with the new target language
-            console.log(`Redémarrage du reconnaisseur en raison du changement de langue cible en ${newTargetLanguage}.`);
-            await stopRecognition();
-            startRecognition();
-        }
-    };
-
-    // Handle Source Language Change
-    const handleSourceLanguageChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const newSourceLanguage = e.target.value;
-        console.log(`Langue source changée en ${newSourceLanguage}.`);
-        setSourceLanguage(newSourceLanguage);
-
-        // If recognition is in progress, restart it with the new source language
-        if (isRecognizing) {
-            await stopRecognition();
-            startRecognition();
-        }
-    };
-
-    // Handle Audio Input Device Change
-    const handleAudioInputDeviceChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const newDeviceId = e.target.value;
-        console.log(`Périphérique d'entrée audio changé en: ${newDeviceId}`);
-        setSelectedAudioInputDevice(newDeviceId);
-
-        if (isRecognizing) {
-            console.log(`Redémarrage de la reconnaissance en raison du changement de périphérique audio en ${newDeviceId}.`);
-            await stopRecognition();
-            startRecognition();
-        }
-    };
-
     // Download Session Transcription Function
     const downloadSessionTranscription = () => {
         if (!sessionTranscription) {
@@ -683,30 +824,65 @@ function App() {
         document.body.removeChild(element);
     };
 
+    // Custom styles for react-select
+    const customStyles = {
+        control: (provided: any) => ({
+            ...provided,
+            backgroundColor: "#f3f4f6", // Tailwind's gray-100
+            borderColor: "#d1d5db", // Tailwind's gray-300
+            borderRadius: "0.375rem", // Tailwind's rounded-md
+            padding: "0.5rem",
+        }),
+        option: (provided: any, state: any) => ({
+            ...provided,
+            backgroundColor: state.isFocused ? "#e5e7eb" : "white", // Tailwind's gray-200
+            color: "black",
+            padding: "0.5rem 1rem",
+        }),
+        singleValue: (provided: any) => ({
+            ...provided,
+            display: "flex",
+            alignItems: "center",
+        }),
+    };
+
     return (
         <div className="min-h-screen bg-gradient-to-b from-gray-100 to-white text-gray-900 font-roboto">
             {/* Navigation Bar */}
             <header className="fixed top-0 w-full bg-white shadow-sm z-50">
                 <nav className="max-w-screen-xl mx-auto flex justify-between items-center px-6 py-4">
                     <div className="flex items-center space-x-3">
-                        <img src={logo} alt="App Logo" className="h-8 w-auto object-contain" />
+                        <img
+                            src={logo}
+                            alt="App Logo"
+                            className="h-8 w-auto object-contain"
+                        />
                         <span className="text-2xl font-semibold tracking-tight">
                             Traducteur IA
                         </span>
                     </div>
                     <ul className="flex space-x-6">
                         <li>
-                            <a href="#features" className="text-gray-700 hover:text-gray-900 transition">
+                            <a
+                                href="#features"
+                                className="text-gray-700 hover:text-gray-900 transition"
+                            >
                                 Fonctionnalités
                             </a>
                         </li>
                         <li>
-                            <a href="#about" className="text-gray-700 hover:text-gray-900 transition">
+                            <a
+                                href="#about"
+                                className="text-gray-700 hover:text-gray-900 transition"
+                            >
                                 À propos
                             </a>
                         </li>
                         <li>
-                            <a href="#contact" className="text-gray-700 hover:text-gray-900 transition">
+                            <a
+                                href="#contact"
+                                className="text-gray-700 hover:text-gray-900 transition"
+                            >
                                 Contactez-Nous
                             </a>
                         </li>
@@ -721,8 +897,8 @@ function App() {
                         Traduction vocale en temps réel
                     </h1>
                     <p className="mt-6 text-lg md:text-xl text-gray-600 max-w-3xl mx-auto">
-                        Parlez dans n'importe quelle langue, et nous la traduirons instantanément 
-                        avec des voix naturelles et fluides.
+                        Parlez dans n'importe quelle langue, et nous la traduirons
+                        instantanément avec des voix naturelles et fluides.
                     </p>
 
                     {/* Container for AudioVisualizer and Buttons */}
@@ -740,9 +916,13 @@ function App() {
                             whileTap={{ scale: 0.95 }}
                             onClick={isRecognizing ? stopRecognition : startRecognition}
                             className={`px-8 py-4 ${
-                                isRecognizing ? "bg-red-600 hover:bg-red-500" : "bg-gray-900 hover:bg-gray-700"
+                                isRecognizing
+                                    ? "bg-red-600 hover:bg-red-500"
+                                    : "bg-gray-900 hover:bg-gray-700"
                             } text-white text-lg font-medium rounded-full shadow-lg focus:outline-none focus:ring-4 ${
-                                isRecognizing ? "focus:ring-red-300" : "focus:ring-gray-300"
+                                isRecognizing
+                                    ? "focus:ring-red-300"
+                                    : "focus:ring-gray-300"
                             } transition`}
                         >
                             {isRecognizing ? (
@@ -753,7 +933,7 @@ function App() {
                             ) : (
                                 <>
                                     <Mic className="w-6 h-6 mr-2 inline" />
-                                    Get Started
+                                    Commencer
                                 </>
                             )}
                         </motion.button>
@@ -792,11 +972,14 @@ function App() {
                         <select
                             value={selectedAudioInputDevice}
                             onChange={handleAudioInputDeviceChange}
-                            className="w-full p-3 bg-gray-100 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
+                            className="font-sans w-full p-3 bg-gray-100 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
                         >
                             {audioInputDevices.length > 0 ? (
                                 audioInputDevices.map((device) => (
-                                    <option key={device.deviceId} value={device.deviceId}>
+                                    <option
+                                        key={device.deviceId}
+                                        value={device.deviceId}
+                                    >
                                         {device.label}
                                     </option>
                                 ))
@@ -811,29 +994,23 @@ function App() {
                         <h3 className="text-xl font-semibold text-gray-800 mb-4">
                             Langue source
                         </h3>
-                        <select
-                            value={sourceLanguage}
-                            onChange={handleSourceLanguageChange}
-                            className="w-full p-3 bg-gray-100 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
-                        >
-                            {sourceLanguages.map((lang) => (
-                                <option key={lang.code} value={lang.code}>
-                                    <span className="flex items-center">
-                                        <ReactCountryFlag
-                                            countryCode={getCountryCode(lang.code)}
-                                            svg
-                                            style={{
-                                                width: "1.5em",
-                                                height: "1.5em",
-                                                marginRight: "0.5em",
-                                                borderRadius: "50%",
-                                            }}
-                                        />
-                                        {lang.name}
-                                    </span>
-                                </option>
-                            ))}
-                        </select>
+                        <Select
+                            options={languageOptions}
+                            value={languageOptions.find(option => option.value === sourceLanguage)}
+                            onChange={(selected) => {
+                                if (selected) {
+                                    setSourceLanguage(selected.value);
+                                    if (isRecognizing) {
+                                        stopRecognition().then(() => startRecognition());
+                                    }
+                                }
+                            }}
+                            components={{ Option: CustomOption, SingleValue: CustomSingleValue }}
+                            styles={customStyles}
+                            className="font-roboto w-full p-3 bg-gray-100 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
+                            classNamePrefix="react-select"
+                            isSearchable
+                        />
                     </div>
 
                     {/* Target Language */}
@@ -841,29 +1018,23 @@ function App() {
                         <h3 className="text-xl font-semibold text-gray-800 mb-4">
                             Langue cible
                         </h3>
-                        <select
-                            value={targetLanguage}
-                            onChange={handleTargetLanguageChange}
-                            className="w-full p-3 bg-gray-100 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
-                        >
-                            {targetLanguages.map((lang) => (
-                                <option key={lang.code} value={lang.code}>
-                                    <span className="flex items-center">
-                                        <ReactCountryFlag
-                                            countryCode={getCountryCode(lang.code)}
-                                            svg
-                                            style={{
-                                                width: "1.5em",
-                                                height: "1.5em",
-                                                marginRight: "0.5em",
-                                                borderRadius: "50%",
-                                            }}
-                                        />
-                                        {lang.name}
-                                    </span>
-                                </option>
-                            ))}
-                        </select>
+                        <Select
+                            options={languageOptions}
+                            value={languageOptions.find(option => option.value === targetLanguage)}
+                            onChange={(selected) => {
+                                if (selected) {
+                                    setTargetLanguage(selected.value);
+                                    if (isRecognizing) {
+                                        stopRecognition().then(() => startRecognition());
+                                    }
+                                }
+                            }}
+                            components={{ Option: CustomOption, SingleValue: CustomSingleValue }}
+                            styles={customStyles}
+                            className="font-roboto w-full p-3 bg-gray-100 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-600"
+                            classNamePrefix="react-select"
+                            isSearchable
+                        />
                     </div>
                 </div>
             </section>
@@ -871,7 +1042,8 @@ function App() {
             {/* Phrase List Section */}
             <section className="max-w-screen-xl mx-auto py-16 px-6">
                 <h2 className="text-3xl font-bold text-gray-800 text-center mb-12">
-                    Améliorez la reconnaissance avec la liste de phrases ({sourceLanguage.toUpperCase()})
+                    Améliorez la reconnaissance avec la liste de phrases (
+                    {sourceLanguage.toUpperCase()})
                 </h2>
                 <div className="flex flex-col md:flex-row items-start md:items-center justify-center gap-4">
                     {/* Phrase Input */}
@@ -900,7 +1072,9 @@ function App() {
                                 ? "opacity-50 cursor-not-allowed"
                                 : ""
                         }`}
-                        disabled={(phraseList[sourceLanguage]?.length || 0) === 0}
+                        disabled={
+                            (phraseList[sourceLanguage]?.length || 0) === 0
+                        }
                         aria-label="Clear Phrases"
                     >
                         <Trash2 className="w-4 h-4 mr-2" />
@@ -915,16 +1089,20 @@ function App() {
                             Termes scientifiques prédéfinis:
                         </h3>
                         <div className="flex flex-wrap justify-center gap-3">
-                            {predefinedScientificTerms[sourceLanguage].map((term, index) => (
-                                <button
-                                    key={index}
-                                    onClick={() => handleAddPredefinedPhrase(term)}
-                                    className="px-4 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition duration-200 text-sm"
-                                    aria-label={`Add predefined phrase ${term}`}
-                                >
-                                    {term}
-                                </button>
-                            ))}
+                            {predefinedScientificTerms[sourceLanguage].map(
+                                (term, index) => (
+                                    <button
+                                        key={index}
+                                        onClick={() =>
+                                            handleAddPredefinedPhrase(term)
+                                        }
+                                        className="px-4 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition duration-200 text-sm"
+                                        aria-label={`Add predefined phrase ${term}`}
+                                    >
+                                        {term}
+                                    </button>
+                                )
+                            )}
                         </div>
                     </div>
                 )}
@@ -937,18 +1115,27 @@ function App() {
                         </h3>
                         <div className="h-32 overflow-y-auto p-4 bg-gray-100 border border-gray-300 rounded-md shadow-inner">
                             <ul className="space-y-2">
-                                {phraseList[sourceLanguage].map((phrase, index) => (
-                                    <li key={index} className="flex items-center justify-between">
-                                        <span className="text-sm text-gray-800">{phrase}</span>
-                                        <button
-                                            onClick={() => handleRemovePhrase(phrase)}
-                                            className="text-red-500 hover:text-red-700 transition duration-200 focus:outline-none"
-                                            aria-label={`Remove phrase ${phrase}`}
+                                {phraseList[sourceLanguage].map(
+                                    (phrase, index) => (
+                                        <li
+                                            key={index}
+                                            className="flex items-center justify-between"
                                         >
-                                            <X className="w-4 h-4" />
-                                        </button>
-                                    </li>
-                                ))}
+                                            <span className="text-sm text-gray-800">
+                                                {phrase}
+                                            </span>
+                                            <button
+                                                onClick={() =>
+                                                    handleRemovePhrase(phrase)
+                                                }
+                                                className="text-red-500 hover:text-red-700 transition duration-200 focus:outline-none"
+                                                aria-label={`Remove phrase ${phrase}`}
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        </li>
+                                    )
+                                )}
                             </ul>
                         </div>
                     </div>
@@ -958,8 +1145,12 @@ function App() {
             {/* Audio Playback Speed Control */}
             <section className="max-w-screen-xl mx-auto py-16 px-6">
                 <div className="flex flex-col items-center">
-                    <label htmlFor="playback-speed" className="block text-gray-700 font-medium mb-2">
-                        Ajuster la vitesse de lecture audio : {playbackSpeed.toFixed(1)}x
+                    <label
+                        htmlFor="playback-speed"
+                        className="block text-gray-700 font-medium mb-2"
+                    >
+                        Ajuster la vitesse de lecture audio :{" "}
+                        {playbackSpeed.toFixed(1)}x
                     </label>
                     <input
                         type="range"
@@ -970,7 +1161,9 @@ function App() {
                         value={playbackSpeed}
                         onChange={(e) => {
                             const newSpeed = parseFloat(e.target.value);
-                            console.log(`Mise à jour de la vitesse de lecture à : ${newSpeed}x`);
+                            console.log(
+                                `Mise à jour de la vitesse de lecture à : ${newSpeed}x`
+                            );
                             setPlaybackSpeed(newSpeed);
                         }}
                         className="w-full max-w-md"
@@ -987,20 +1180,26 @@ function App() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         {/* Transcription Box */}
                         <div className="p-6 bg-white shadow-md rounded-lg">
-                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Transcription</h3>
+                            <h3 className="text-xl font-semibold text-gray-800 mb-4">
+                                Transcription
+                            </h3>
                             <div className="p-4 bg-gray-100 rounded-md min-h-[150px]">
                                 <p className="text-gray-700 whitespace-pre-wrap">
-                                    {transcription || "La transcription apparaîtra ici..."}
+                                    {transcription ||
+                                        "La transcription apparaîtra ici..."}
                                 </p>
                             </div>
                         </div>
 
                         {/* Translation Box */}
                         <div className="p-6 bg-white shadow-md rounded-lg">
-                            <h3 className="text-xl font-semibold text-gray-800 mb-4">Traduction</h3>
+                            <h3 className="text-xl font-semibold text-gray-800 mb-4">
+                                Traduction
+                            </h3>
                             <div className="p-4 bg-gray-100 rounded-md min-h-[150px]">
                                 <p className="text-gray-700 whitespace-pre-wrap">
-                                    {translation || "La traduction apparaîtra ici..."}
+                                    {translation ||
+                                        "La traduction apparaîtra ici..."}
                                 </p>
                             </div>
                         </div>
@@ -1016,14 +1215,17 @@ function App() {
                     </h2>
                     <div className="p-6 bg-gray-100 rounded-lg shadow-md min-h-[200px] overflow-y-auto">
                         <pre className="text-gray-800 whitespace-pre-wrap">
-                            {sessionTranscription || "La transcription de la session apparaîtra ici..."}
+                            {sessionTranscription ||
+                                "La transcription de la session apparaîtra ici..."}
                         </pre>
                     </div>
                     <div className="mt-6 flex justify-center">
                         <button
                             onClick={downloadSessionTranscription}
                             className={`flex items-center justify-center px-6 py-3 bg-purple-600 text-white rounded-full hover:bg-purple-700 transition duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 shadow-lg transform hover:scale-105 ${
-                                !sessionTranscription ? "bg-purple-300 cursor-not-allowed" : ""
+                                !sessionTranscription
+                                    ? "bg-purple-300 cursor-not-allowed"
+                                    : ""
                             }`}
                             disabled={!sessionTranscription}
                         >
@@ -1044,7 +1246,6 @@ function App() {
             </footer>
         </div>
     );
-
 }
 
 export default App;

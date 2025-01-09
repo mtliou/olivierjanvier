@@ -21,6 +21,16 @@ export default {
       transitionTimingFunction: {
         'in-out-soft': 'cubic-bezier(0.4, 0, 0.2, 1)',
       },
+      fontFamily: {
+        // Extend the sans font family to include emoji-supporting fonts
+        'sans': [
+          'Inter', // Replace with your primary sans-serif font
+          'Segoe UI Emoji', // Windows
+          'Apple Color Emoji', // macOS
+          'Noto Color Emoji', // Android and other platforms
+          'sans-serif',
+        ],
+      },
     },
   },
   plugins: [],
