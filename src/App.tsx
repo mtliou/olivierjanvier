@@ -230,7 +230,7 @@ function App() {
         };
     }, [speechKey, serviceRegion]);
 
-    // Enumerate audio input devices on component mount
+// Inside your useEffect for enumerating devices
     useEffect(() => {
         const enumerateDevices = async () => {
             try {
@@ -874,7 +874,7 @@ function App() {
                 <nav className="max-w-screen-xl mx-auto flex justify-between items-center px-6 py-4">
                     <div className="flex items-center space-x-3">
                         <img
-                            src={logo}
+                            src="/assets/logo.png"
                             alt="App Logo"
                             className="h-8 w-auto object-contain"
                         />
