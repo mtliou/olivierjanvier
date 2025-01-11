@@ -1,4 +1,4 @@
-// src/App.tsx
+// frontend/src/App.tsx
 
 import React, { useState, useRef, useEffect } from "react";
 import * as SpeechSDK from "microsoft-cognitiveservices-speech-sdk";
@@ -81,7 +81,7 @@ const initialPhraseLists: { [key: string]: string[] } = languages.reduce(
 const voiceMap: { [key: string]: string } = {
     pl: "pl-PL-AgnieszkaNeural",
     en: "en-US-JennyNeural",
-    fr: "fr-FR-DeniseNeural",
+    fr: "fr-CA-SylvieNeural",
     es: "es-ES-AlvaroNeural", // Updated to a likely available voice
     de: "de-DE-KatjaNeural",
     it: "it-IT-ElsaNeural",
@@ -95,7 +95,9 @@ const voiceMap: { [key: string]: string } = {
 };
 
 // Custom Option component to include flag icons
-const CustomOption = (props: OptionProps<{ value: string; label: string; countryCode: string }, false>) => (
+const CustomOption = (
+    props: OptionProps<{ value: string; label: string; countryCode: string }, false>
+) => (
     <components.Option {...props}>
         <div className="flex items-center">
             <ReactCountryFlag
@@ -110,7 +112,9 @@ const CustomOption = (props: OptionProps<{ value: string; label: string; country
 );
 
 // Custom SingleValue component to include flag icons
-const CustomSingleValue = (props: SingleValue<{ value: string; label: string; countryCode: string }>) => (
+const CustomSingleValue = (
+    props: SingleValue<{ value: string; label: string; countryCode: string }>
+) => (
     <components.SingleValue {...props}>
         <div className="flex items-center">
             <ReactCountryFlag
@@ -143,14 +147,7 @@ function App() {
     const [sessionTranscription, setSessionTranscription] = useState<string>("");
 
     // State to control visibility of transcription sections
-    const [showTranscriptionSections, setShowTranscriptionSections] =
-        useState<boolean>(false);
-
-    // Define target languages
-    const targetLanguages: { code: string; name: string }[] = languages;
-
-    // Define source languages
-    const sourceLanguages: { code: string; name: string }[] = languages;
+    const [showTranscriptionSections, setShowTranscriptionSections] = useState<boolean>(false);
 
     // Initialize source and target language states
     const [sourceLanguage, setSourceLanguage] = useState<string>("fr"); // Default to French
@@ -160,8 +157,7 @@ function App() {
     const [audioInputDevices, setAudioInputDevices] = useState<
         { deviceId: string; label: string }[]
     >([]);
-    const [selectedAudioInputDevice, setSelectedAudioInputDevice] =
-        useState<string>("");
+    const [selectedAudioInputDevice, setSelectedAudioInputDevice] = useState<string>("");
 
     // State for phrase list: language-specific
     const [phraseInput, setPhraseInput] = useState<string>(""); // Current input field
@@ -220,8 +216,15 @@ function App() {
 
         return () => {
             if (synthRef.current) {
-                synthRef.current.close();
-                console.log("Synthesizer closed on unmount.");
+                try {
+                    synthRef.current.close();
+                    console.log("Synthesizer closed on unmount.");
+                } catch (error) {
+                    console.warn(
+                        "Synthesizer already closed on unmount:",
+                        error
+                    );
+                }
                 synthRef.current = null;
             }
         };
@@ -275,6 +278,17 @@ function App() {
     useEffect(() => {
         localStorage.setItem("phraseList", JSON.stringify(phraseList));
     }, [phraseList]);
+
+    // Update phrase list on changes
+    useEffect(() => {
+        if (isRecognizing && translationRecognizerRef.current) {
+            console.log("Updating phrase list...");
+            const phrasesAdded = addPhrasesToRecognizer(translationRecognizerRef.current);
+            if (!phrasesAdded) {
+                stopRecognition();
+            }
+        }
+    }, [phraseList, sourceLanguage]);
 
     // Cleanup on component unmount
     useEffect(() => {
@@ -433,6 +447,9 @@ function App() {
         try {
             const phraseListConstraint =
                 SpeechSDK.PhraseListGrammar.fromRecognizer(recognizer);
+            phraseListConstraint.clear(); // Clear existing phrases to avoid duplicates
+            console.log(`[${sourceLanguage}] Existing phrase list cleared.`);
+
             const currentPhrases = phraseList[sourceLanguage] || [];
 
             if (currentPhrases.length > 0) {
@@ -455,6 +472,10 @@ function App() {
                 });
                 console.log(
                     `[${sourceLanguage}] Toutes les phrases ont été ajoutées avec succès.`
+                );
+                console.log(
+                    `[${sourceLanguage}] Phrase list appliquée: `,
+                    currentPhrases
                 );
             }
             return true;
@@ -792,8 +813,8 @@ function App() {
     const getLocaleCode = (langCode: string): string => {
         const localeMap: { [key: string]: string } = {
             pl: "pl-PL",
-            en: "en-US",
-            fr: "fr-FR",
+            en: "en-CA",
+            fr: "fr-CA",
             es: "es-ES", // Ensure this matches the updated voiceMap
             de: "de-DE",
             it: "it-IT",
